@@ -145,6 +145,9 @@ class route:
         with open('data.json', 'w+') as f:
             f.write(json_data)
 
+    def step(self, action):
+        pass
+
     def distance(self, cur_v, ad):
         if self.AGV['speed'] + ad * self.acceleration >= self.min_speed and self.AGV[
             'speed'] + ad * self.acceleration <= self.max_speed:
