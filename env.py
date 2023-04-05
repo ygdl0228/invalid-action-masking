@@ -5,21 +5,22 @@
 
 import math
 import matplotlib.pyplot as plt
-import matplotlib
+import torch
+import numpy as np
 import json
-matplotlib.use("TkAgg")
+from agent import DQN
+from agent import ReplayBuffer
 
 
 class route:
-    def __init__(self, road_length, YC_interval, QC_interval, buffer_legth, node_nums_x, node_nums_YC, node_nums_buffer,
+    def __init__(self, road_length, YC_interval, QC_interval, buffer_length, node_nums_x, node_nums_YC,
                  node_nums_QC, max_speed, min_speed, acceleration):
         self.road_length = road_length
         self.YC_interval = YC_interval
         self.QC_interval = QC_interval
-        self.buffer_legth = buffer_legth
+        self.buffer_length = buffer_length
         self.node_nums_x = node_nums_x
         self.node_nums_YC = node_nums_YC
-        self.node_nums_buffer = node_nums_buffer
         self.node_nums_QC = node_nums_QC
         self.max_speed = max_speed
         self.min_speed = min_speed
@@ -33,48 +34,41 @@ class route:
         self.nodes_buffer = {}
         self.edges = []
         self.AGV = {}
-        self.AGV_info = {'loc':[]}
+        self.AGV_info = {'loc': []}
         self.speed = 0
 
     def creat_map(self, draw_arrow):
         node_nums = 1
-        # YC
+        # YC node
         for j in range(self.node_nums_YC):
             for i in range(self.node_nums_x):
                 self.nodes_YC[node_nums] = [i * self.road_length, j * self.YC_interval]
-                # plt.plot(i * self.road_length, j * self.YC_interval, 'o', color='black')
-                # plt.text(i * self.road_length + 0.5, j * self.YC_interval - 0.5, f"{node_nums}", fontsize=10)
+                plt.plot(i * self.road_length, j * self.YC_interval, 'o', color='b')
+                # plt.text(i * road_length + 0.5, j * YC_interval - 0.5, f"{node_nums}", fontsize=10)
                 node_nums += 1
 
-        # buffer
-        for j in range(self.node_nums_YC + 1, self.node_nums_buffer + self.node_nums_YC + 1):
-            for i in range(self.node_nums_x):
-                self.nodes_buffer[node_nums] = [i * self.road_length, j * self.buffer_legth]
-                # plt.plot(i * self.road_length, j * self.buffer_legth, 'o', color='red')
-                # plt.text(i * self.road_length + 0.5, j * self.buffer_legth - 0.5, f"{node_nums}", fontsize=10)
-                node_nums += 1
+        # YC最高点
+        MAX_YC_Y = sorted(self.nodes_YC.items(), key=lambda x: x[1][1], reverse=True)[0][1][1]
 
-        # QC
-        for j in range(self.node_nums_YC + self.node_nums_buffer + 1,
-                       self.node_nums_QC + self.node_nums_buffer + self.node_nums_YC + 1):
+        # QC node
+        for j in range(self.node_nums_QC):
             for i in range(self.node_nums_x):
-                self.nodes_QC[node_nums] = [i * self.road_length, j * self.QC_interval]
-                # plt.plot(i * self.road_length, j * self.QC_interval, 'o', color='blue')
-                # plt.text(i * self.road_length + 0.5, j * self.QC_interval - 0.5, f"{node_nums}", fontsize=10)
+                self.nodes_QC[node_nums] = [i * self.road_length, j * self.QC_interval + MAX_YC_Y + self.buffer_length]
+                plt.plot(i * self.road_length, j * self.QC_interval + MAX_YC_Y + self.buffer_length, 'o', color='r')
+                # plt.text(i * road_length + 0.5, j * QC_interval - 0.5, f"{node_nums}", fontsize=10)
                 node_nums += 1
 
         self.nodes.update(self.nodes_YC)
-        self.nodes.update(self.nodes_buffer)
         self.nodes.update(self.nodes_QC)
-        # YC
-        # 从左到右
+
+        # YC从左到右
         for i in range(1, len(self.nodes_YC), self.node_nums_x):
             for j in range(i, self.node_nums_x + i - 1):
                 start = self.nodes_YC[j]
                 end = self.nodes_YC[j + 1]
                 self.edges.append([start, end])
 
-        # 双向
+        # YC双向
         for i in range(1, self.node_nums_x + 1):
             for j in range(self.node_nums_YC - 1):
                 start = self.nodes_YC[i + self.node_nums_x * j]
@@ -82,72 +76,46 @@ class route:
                 self.edges.append([start, end])
                 self.edges.append([end, start])
 
-        # YC buffer
-        for i in range(1, self.node_nums_x + 1):
-            for j in range(self.node_nums_YC - 1, self.node_nums_YC):
-                if i & 1:
-                    start = self.nodes_YC[i + self.node_nums_x * j]
-                    end = self.nodes_buffer[i + self.node_nums_x * (j + 1)]
-                    self.edges.append([start, end])
+        # YC最大坐标序号的值
+        MAX_YC_Y_NODES = sorted(self.nodes_YC.items(), key=lambda x: x[0], reverse=True)[0][0]
 
-                else:
-                    start = self.nodes_YC[i + self.node_nums_x * j]
-                    end = self.nodes_buffer[i + self.node_nums_x * (j + 1)]
-                    self.edges.append([end, start])
-
-        # buffer
-        # 双向
-        for i in range(1, self.node_nums_x + 1):
-            for j in range(self.node_nums_YC, self.node_nums_buffer + self.node_nums_YC - 1):
-                start = self.nodes_buffer[i + self.node_nums_x * j]
-                end = self.nodes_buffer[i + self.node_nums_x * (j + 1)]
-                if i & 1:
-                    self.edges.append([start, end])
-
-                else:
-                    self.edges.append([end, start])
-
-        # buffer QC
-        for i in range(1, self.node_nums_x + 1):
-            for j in range(self.node_nums_YC + self.node_nums_buffer - 1, self.node_nums_YC + self.node_nums_buffer):
-                if i & 1:
-                    start = self.nodes_buffer[i + self.node_nums_x * j]
-                    end = self.nodes_QC[i + self.node_nums_x * (j + 1)]
-                    self.edges.append([start, end])
-
-                else:
-                    start = self.nodes_buffer[i + self.node_nums_x * j]
-                    end = self.nodes_QC[i + self.node_nums_x * (j + 1)]
-                    self.edges.append([end, start])
-
-        # QC
-        for i in range(len(self.nodes_QC) + len(self.nodes_buffer) + 1,
-                       len(self.nodes_QC) + len(self.nodes_buffer) + len(self.nodes_YC),
-                       self.node_nums_x):
-            for j in range(i, self.node_nums_x + i - 1):
-                start = self.nodes_QC[j]
-                end = self.nodes_QC[j + 1]
+        # QC从右到左
+        for i in range(self.node_nums_QC):
+            for j in range(i * self.node_nums_x + 1 + MAX_YC_Y_NODES,
+                           self.node_nums_x + i * self.node_nums_x + MAX_YC_Y_NODES):
+                end = self.nodes_QC[j]
+                start = self.nodes_QC[j + 1]
                 self.edges.append([start, end])
 
-        # 双向
+        # QC双向
         for i in range(1, self.node_nums_x + 1):
-            for j in range(self.node_nums_YC + self.node_nums_buffer,
-                           self.node_nums_YC + self.node_nums_buffer + self.node_nums_QC - 1):
+            for j in range(self.node_nums_YC,
+                           self.node_nums_YC + self.node_nums_QC - 1):
                 start = self.nodes_QC[i + self.node_nums_x * j]
                 end = self.nodes_QC[i + self.node_nums_x * (j + 1)]
                 self.edges.append([start, end])
                 self.edges.append([end, start])
-        if draw_arrow == 'True':
-            for start, end in self.edges:
-                plt.arrow(start[0], start[1], end[0] - start[0], end[1] - start[1], head_width=2, head_length=5,
-                          length_includes_head=True)
-        elif draw_arrow == 'False':
-            for start, end in self.edges:
-                plt.arrow(start[0], start[1], end[0] - start[0], end[1] - start[1], length_includes_head=True)
 
-        plt.xlim((-5, self.node_nums_x * self.road_length * 1.1))
-        plt.ylim((-5, (
-                self.node_nums_QC * self.QC_interval + self.node_nums_YC * self.YC_interval + self.node_nums_buffer * self.buffer_legth) * 1.2))
+        # buffer
+        # 双向
+        for i in range(self.node_nums_x * (self.node_nums_YC - 1) + 1, self.node_nums_x * self.node_nums_YC + 1):
+            start = self.nodes_YC[i]
+            end = self.nodes_QC[i + self.node_nums_x]
+            if i & 1:
+                self.edges.append([start, end])
+            else:
+                self.edges.append([end, start])
+
+        if draw_arrow:
+            for start, end in self.edges:
+                plt.arrow(start[0], start[1], end[0] - start[0], end[1] - start[1], head_width=0.2, head_length=0.2,
+                          length_includes_head=True)
+        else:
+            for start, end in self.edges:
+                plt.arrow(start[0], start[1], end[0] - start[0], end[1] - start[1],
+                          length_includes_head=True)
+
+        plt.axis('scaled')
         plt.show()
 
     def AGV_get_task(self):
@@ -156,6 +124,9 @@ class route:
         self.AGV['loc'] = self.nodes[self.AGV['start']]
         self.AGV['speed'] = 1
         self.AGV['inter'] = [1, 1]
+
+    def reset(self):
+        pass
 
     # 方向 加速减速还是匀速 ad=[-1,1]
     def move_AGV(self, action, ad):
@@ -239,21 +210,57 @@ class route:
         return math.sqrt((x - x0) ** 2 + (y - y0) ** 2)
 
 
-'''road_length, YC_interval, QC_interval, buffer_legth, node_nums_x, node_nums_YC, node_nums_buffer,
+'''road_length, YC_interval, QC_interval, buffer_legth, node_nums_x, node_nums_YC,
                  node_nums_QC, max_speed, min_speed, acceleration'''
-route=route(7,4,4,4,16,6,4,7,10,1,1)
-route.creat_map('False')
-route.AGV_get_task()
+if __name__ == '__main__':
+    lr = 2e-3
+    num_episodes = 500
+    hidden_dim = 128
+    gamma = 0.98
+    epsilon = 0.01
+    target_update = 10
+    buffer_size = 10000
+    minimal_size = 500
+    batch_size = 64
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device(
+        "cpu")
+    np.random.seed(0)
+    torch.manual_seed(0)
+    replay_buffer = ReplayBuffer(buffer_size)
+    state_dim = 8
+    action_dim = 4
+    agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon,
+                target_update, device)
+    env = route(1, 1, 4, 8, 16, 6, 3, 10, 1, 1)
+    env.creat_map('False')
+    return_list = []
+    for i in range(num_episodes):
+        episode_return = 0
+        state = env.reset()
+        done = False
+        env.creat_map('False')
+        while not done:
+            action = agent.take_action(state)
+            next_state, reward, done, _ = env.step(action)
+            replay_buffer.add(state, action, reward, next_state, done)
+            state = next_state
+            episode_return += reward
+            # 当buffer数据的数量超过一定值后,才进行Q网络训练
+            if replay_buffer.size() > minimal_size:
+                b_s, b_a, b_r, b_ns, b_d = replay_buffer.sample(batch_size)
+                transition_dict = {
+                    'states': b_s,
+                    'actions': b_a,
+                    'next_states': b_ns,
+                    'rewards': b_r,
+                    'dones': b_d
+                }
+                agent.update(transition_dict)
+        return_list.append(episode_return)
 
-while 1:
-    try:
-        route.move_AGV(route.action_space()[0],1)
-    except:
-        break
-route.save_info()
-
-
-
-
-
-
+# while 1:
+#     try:
+#         route.move_AGV(route.action_space()[0],1)
+#     except:
+#         break
+# route.save_info()
