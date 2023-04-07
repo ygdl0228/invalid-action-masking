@@ -27,6 +27,7 @@ class route:
         self.acceleration = acceleration
         self.cur_time = 0
         self.move_direction = {'up': [0, 1], 'down': [0, -1], 'right': [1, 0], 'left': [-1, 0]}
+        self.action_map = {1: 'up', 2: 'down', 3: 'left', 4: 'right'}
         self.clf_fig = 'data.json'
         self.nodes = {}
         self.nodes_QC = {}
@@ -120,25 +121,48 @@ class route:
 
     def AGV_get_task(self):
         self.AGV['start'] = 1
-        self.AGV['end'] = 115
+        self.AGV['end'] = 142
         self.AGV['loc'] = self.nodes[self.AGV['start']]
+        self.AGV['destination'] = self.nodes[self.AGV['end']]
         self.AGV['speed'] = 1
         self.AGV['inter'] = [1, 1]
 
     def reset(self):
-        pass
+        self.creat_map('False')
+        self.AGV_get_task()
+        return self.AGV_infor()
+
+    def distance_angle(self, origin, destination):
+
+        x1, y1 = origin
+        x2, y2 = destination
+        angle = 0.0
+        dx = x2 - x1
+        dy = y2 - y1
+        if x2 == x1:
+            angle = math.pi / 2.0
+            if y2 == y1:
+                angle = 0.0
+            elif y2 < y1:
+                angle = 3.0 * math.pi / 2.0
+        elif x2 > x1 and y2 > y1:
+            angle = math.atan(dx / dy)
+        elif x2 > x1 and y2 < y1:
+            angle = math.pi / 2 + math.atan(-dy / dx)
+        elif x2 < x1 and y2 < y1:
+            angle = math.pi + math.atan(dx / dy)
+        elif x2 < x1 and y2 > y1:
+            angle = 3.0 * math.pi / 2.0 + math.atan(dy / -dx)
+        return [angle * 180 / math.pi, abs(x1 - x2) + abs(y1 - y2)]
 
     # 方向 加速减速还是匀速 ad=[-1,1]
     def move_AGV(self, action, ad):
-        print(self.cur_time)
-        print(self.AGV)
         self.AGV_info['loc'].append(self.AGV['loc'])
         self.AGV['speed'], dis = self.distance(self.AGV['speed'], ad)
         dx = self.move_direction[action][0] * dis
         dy = self.move_direction[action][1] * dis
         self.cur_time += 1
         self.AGV['loc'] = [self.AGV['loc'][0] + dx, self.AGV['loc'][1] + dy]
-        print(self.AGV_info)
 
     def save_info(self):
         json_data = json.dumps(self.AGV_info)
@@ -146,7 +170,13 @@ class route:
             f.write(json_data)
 
     def step(self, action):
-        pass
+        done = False
+        action_dir = self.action_map[action]
+        self.move_AGV(action_dir, 0)
+        reward = -1
+        if self.AGV['loc'] == self.AGV['destination']:
+            done = True
+        return self.AGV_infor(), reward, done
 
     def distance(self, cur_v, ad):
         if self.AGV['speed'] + ad * self.acceleration >= self.min_speed and self.AGV[
@@ -162,7 +192,7 @@ class route:
         dis = (cur_v + next_v) / 2
         return next_v, dis
 
-    def action_space(self):
+    def get_avail_agent_action(self):
         action_space = []
         if self.AGV['loc'] in self.nodes.values():
             self.AGV['inter'] = [self.get_keys(self.nodes, self.AGV['loc']) for _ in range(2)]
@@ -194,7 +224,8 @@ class route:
         elif end[1] - start[1] == 0 and end[0] - start[0] < 0:
             return 'left'
 
-    # def AGV_infor(self):
+    def AGV_infor(self):
+        return self.distance_angle(self.AGV['loc'], self.AGV['destination'])
 
     # 判断点到直线的距离 从而判断AGV在哪条路段上
     def distance_to_line_segment(self, P, L):
@@ -230,39 +261,39 @@ if __name__ == '__main__':
     np.random.seed(0)
     torch.manual_seed(0)
     replay_buffer = ReplayBuffer(buffer_size)
-    state_dim = 8
+    state_dim = 2
     action_dim = 4
     agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon,
                 target_update, device)
-    env = route(1, 1, 4, 8, 16, 6, 3, 10, 1, 1)
-    env.creat_map('False')
+    env = route(1, 1, 1, 8, 16, 6, 3, 10, 1, 1)
     return_list = []
     for i in range(num_episodes):
         episode_return = 0
         state = env.reset()
         done = False
-        env.creat_map('False')
         while not done:
-            action = agent.take_action(state)
-            next_state, reward, done, _ = env.step(action)
-            replay_buffer.add(state, action, reward, next_state, done)
+            avail_action = env.get_avail_agent_action()
+            action,avail_action_mask = agent.take_action(state, avail_action)
+            next_state, reward, done = env.step(action)
+            replay_buffer.add(state, action, reward, next_state, avail_action_mask, done)
             state = next_state
             episode_return += reward
             # 当buffer数据的数量超过一定值后,才进行Q网络训练
             if replay_buffer.size() > minimal_size:
-                b_s, b_a, b_r, b_ns, b_d = replay_buffer.sample(batch_size)
+                b_s, b_a, b_r, b_ns, b_aam, b_d = replay_buffer.sample(batch_size)
                 transition_dict = {
                     'states': b_s,
                     'actions': b_a,
                     'next_states': b_ns,
                     'rewards': b_r,
+                    'avail_action_mask': b_aam,
                     'dones': b_d
                 }
                 agent.update(transition_dict)
         return_list.append(episode_return)
 
 # while 1:
-#     try:
+#     try:print
 #         route.move_AGV(route.action_space()[0],1)
 #     except:
 #         break
