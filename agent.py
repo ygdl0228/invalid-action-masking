@@ -92,7 +92,6 @@ class DQN:
             action = np.random.choice(avail_action_dim)
         else:
             action = q_values.argmax().item() + 1
-        print()
         return action,avail_action_mask
 
     def update(self, transition_dict):
@@ -114,6 +113,9 @@ class DQN:
         print(q_target)
         print(avail_action_mask)
         for i in range(len(q_target)):
+            print(q_target[i])
+            print(avail_action_mask[i])
+
 
         # max(1) 返回每一行的最大值
         max_next_q_values = self.target_q_net(next_states).max(1)[0].view(
