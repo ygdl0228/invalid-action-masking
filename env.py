@@ -30,6 +30,7 @@ class route:
         self.action_map = {1: 'up', 2: 'down', 3: 'left', 4: 'right'}
         self.clf_fig = 'data.json'
         self.nodes = {}
+        self.nodes_reverse = {}
         self.nodes_QC = {}
         self.nodes_YC = {}
         self.nodes_buffer = {}
@@ -61,7 +62,6 @@ class route:
 
         self.nodes.update(self.nodes_YC)
         self.nodes.update(self.nodes_QC)
-
         # YC从左到右
         for i in range(1, len(self.nodes_YC), self.node_nums_x):
             for j in range(i, self.node_nums_x + i - 1):
@@ -103,9 +103,9 @@ class route:
             start = self.nodes_YC[i]
             end = self.nodes_QC[i + self.node_nums_x]
             if i & 1:
-                self.edges.append([start, end])
-            else:
                 self.edges.append([end, start])
+            else:
+                self.edges.append([start, end])
 
         if draw_arrow:
             for start, end in self.edges:
@@ -173,7 +173,7 @@ class route:
         done = False
         action_dir = self.action_map[action]
         self.move_AGV(action_dir, 0)
-        reward = -1
+        reward = -1 - self.AGV_infor()[1]
         if self.AGV['loc'] == self.AGV['destination']:
             done = True
         return self.AGV_infor(), reward, done
@@ -207,7 +207,17 @@ class route:
                     self.AGV['inter'] = [self.get_keys(self.nodes, start_edge), self.get_keys(self.nodes, end_edge)]
                     action_space.append(self.run_direction(start_edge, end_edge))
                     continue
-        return action_space
+        avail_action_mask = [1, 1, 1, 1]
+
+        if 'up' not in action_space:
+            avail_action_mask[0] = 0
+        if 'down' not in action_space:
+            avail_action_mask[1] = 0
+        if 'left' not in action_space:
+            avail_action_mask[2] = 0
+        if 'right' not in action_space:
+            avail_action_mask[3] = 0
+        return action_space, avail_action_mask
 
     def get_keys(self, d, value):
         for k, v in d.items():
@@ -247,13 +257,17 @@ class route:
 '''road_length, YC_interval, QC_interval, buffer_legth, node_nums_x, node_nums_YC,
                  node_nums_QC, max_speed, min_speed, acceleration'''
 if __name__ == '__main__':
-    lr = 2e-3
+    lr = 1e-2
+    lr_decay = 0.97
+    min_lr = 1e-7
     num_episodes = 500
     hidden_dim = 128
     gamma = 0.98
-    epsilon = 0.01
+    epsilon = 0.8
+    epsilon_decay = 0.95
+    min_epsilon = 1e-4
     target_update = 10
-    buffer_size = 10000
+    buffer_size = 1000000000
     minimal_size = 500
     batch_size = 64
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device(
@@ -263,34 +277,41 @@ if __name__ == '__main__':
     replay_buffer = ReplayBuffer(buffer_size)
     state_dim = 2
     action_dim = 4
-    agent = DQN(state_dim, hidden_dim, action_dim, lr, gamma, epsilon,
+    agent = DQN(state_dim, hidden_dim, action_dim, lr, lr_decay, min_lr, gamma, epsilon, epsilon_decay, min_epsilon,
                 target_update, device)
-    env = route(1, 1, 1, 8, 16, 6, 3, 10, 1, 1)
+
     return_list = []
-    for i in range(num_episodes):
+    for eps in range(num_episodes):
+        print(f'第{eps + 1}次训练')
         episode_return = 0
+        env = route(1, 1, 1, 2, 16, 6, 3, 10, 1, 1)
         state = env.reset()
         done = False
         while not done:
-            avail_action = env.get_avail_agent_action()
-            action,avail_action_mask = agent.take_action(state, avail_action)
+            avail_action, avail_action_mask = env.get_avail_agent_action()
+            action = agent.take_action(state, avail_action, eps)
             next_state, reward, done = env.step(action)
-            replay_buffer.add(state, action, reward, next_state, avail_action_mask, done)
+            _, next_avail_action_mask = env.get_avail_agent_action()
+            replay_buffer.add(state, action, reward, next_state, next_avail_action_mask, done)
             state = next_state
             episode_return += reward
             # 当buffer数据的数量超过一定值后,才进行Q网络训练
             if replay_buffer.size() > minimal_size:
-                b_s, b_a, b_r, b_ns, b_aam, b_d = replay_buffer.sample(batch_size)
+                b_s, b_a, b_r, b_ns, b_naam, b_d = replay_buffer.sample(batch_size)
                 transition_dict = {
                     'states': b_s,
                     'actions': b_a,
                     'next_states': b_ns,
                     'rewards': b_r,
-                    'avail_action_mask': b_aam,
+                    'next_avail_action_mask': b_naam,
                     'dones': b_d
                 }
-                agent.update(transition_dict)
+                agent.update(transition_dict, eps)
         return_list.append(episode_return)
+        print(return_list)
+        plt.plot(return_list)
+        plt.show()
+
 
 # while 1:
 #     try:print

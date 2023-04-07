@@ -3,5 +3,6 @@
 # @FileName: test-2.py
 # @Software: PyCharm
 
-a=
+import matplotlib.pyplot as plt
+plt
 
