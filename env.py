@@ -265,8 +265,8 @@ if __name__ == '__main__':
     num_episodes = 50000
     hidden_dim = 128
     gamma = 0.98
-    epsilon = 1e-3
-    epsilon_decay = 0
+    epsilon = 0.8
+    epsilon_decay = 0.97
     min_epsilon = 1e-4
     target_update = 10
     buffer_size = 1000000000
@@ -279,7 +279,7 @@ if __name__ == '__main__':
     replay_buffer = ReplayBuffer(buffer_size)
     state_dim = 6
     action_dim = 4
-    dqn_type = 'DoubleDQN'
+    dqn_type = 'D3QN'
     agent = DQN(state_dim, hidden_dim, action_dim, lr, lr_decay, min_lr, gamma, epsilon, epsilon_decay, min_epsilon,
                 target_update, device, dqn_type)
 

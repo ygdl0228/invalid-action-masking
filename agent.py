@@ -80,7 +80,7 @@ class DQN:
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
         self.dqn_type = dqn_type
-        if self.dqn_type == 'DuelingDQN':
+        if self.dqn_type == 'DuelingDQN' or self.dqn_type == 'D3QN':
             self.q_net = VAnet(self.state_dim, self.hidden_dim,
                                self.action_dim).to(device)
             self.target_q_net = VAnet(self.state_dim, self.hidden_dim,
@@ -147,7 +147,7 @@ class DQN:
 
         q_values = self.q_net(states).gather(1, actions)  # Q值
         # 下个状态的最大Q值
-        if self.dqn_type == 'DQN':
+        if self.dqn_type == 'DQN' or self.dqn_type == 'DuelingDQN':
             q_target = self.target_q_net(next_states)
             for i in range(len(q_target)):
                 for j in range(4):
@@ -156,7 +156,7 @@ class DQN:
             # max(1) 返回每一行的最大值
             max_next_q_values = q_target.max(1)[0].view(-1, 1)
             # TD误差目标
-        elif self.dqn_type == 'DoubleDQN':
+        elif self.dqn_type == 'DoubleDQN' or self.dqn_type == 'D3QN':
             q_target = self.q_net(next_states)
             for i in range(len(q_target)):
                 for j in range(4):
