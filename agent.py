@@ -32,6 +32,21 @@ class ReplayBuffer:
         return len(self.buffer)
 
 
+class VAnet(torch.nn.Module):
+    ''' 只有一层隐藏层的A网络和V网络 '''
+    def __init__(self, state_dim, hidden_dim, action_dim):
+        super(VAnet, self).__init__()
+        self.fc1 = torch.nn.Linear(state_dim, hidden_dim)  # 共享网络部分
+        self.fc_A = torch.nn.Linear(hidden_dim, action_dim)
+        self.fc_V = torch.nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        A = self.fc_A(F.relu(self.fc1(x)))
+        V = self.fc_V(F.relu(self.fc1(x)))
+        Q = V + A - A.mean(1).view(-1, 1)  # Q值由V值和A值计算得到
+        return Q
+
+
 class Qnet(torch.nn.Module):
     ''' 只有一层隐藏层的Q网络 '''
 
@@ -54,13 +69,21 @@ class DQN:
     ''' DQN算法 '''
 
     def __init__(self, state_dim, hidden_dim, action_dim, learning_rate, lr_decay, min_lr, gamma,
-                 epsilon, epsilon_decay, min_epsilon, target_update, device):
+                 epsilon, epsilon_decay, min_epsilon, target_update, device, dqn_type):
         self.action_dim = action_dim
-        self.q_net = Qnet(state_dim, hidden_dim,
-                          self.action_dim).to(device)  # Q网络
-        # 目标网络
-        self.target_q_net = Qnet(state_dim, hidden_dim,
-                                 self.action_dim).to(device)
+        self.state_dim = state_dim
+        self.hidden_dim = hidden_dim
+        self.dqn_type = dqn_type
+        if self.dqn_type == 'DuelingDQN':
+            self.q_net = VAnet(self.state_dim, self.hidden_dim,
+                               self.action_dim).to(device)
+            self.target_q_net = VAnet(self.state_dim, self.hidden_dim,
+                                      self.action_dim).to(device)
+        else:
+            self.q_net = Qnet(self.state_dim, self.hidden_dim,
+                              self.action_dim).to(device)
+            self.target_q_net = Qnet(self.state_dim, self.hidden_dim,
+                                     self.action_dim).to(device)
         self.gamma = gamma  # 折扣因子
         self.epsilon_decay = epsilon_decay
         self.epsilon = epsilon  # epsilon-贪婪策略
@@ -93,11 +116,11 @@ class DQN:
             q_values[0][3] = -float('inf')
         for i in range(len(q_values[0])):
             if q_values[0][i] != -float('inf'):
-                avail_action_dim.append(i + 1)
+                avail_action_dim.append(i)
         if np.random.random() < max(self.min_epsilon, self.epsilon * (self.epsilon_decay ** eps)):
             action = np.random.choice(avail_action_dim)
         else:
-            action = q_values.argmax().item() + 1
+            action = q_values.argmax().item()
         return action
 
     def update(self, transition_dict, eps):
@@ -115,19 +138,29 @@ class DQN:
                                               dtype=torch.float).to(self.device)
         dones = torch.tensor(transition_dict['dones'],
                              dtype=torch.float).view(-1, 1).to(self.device)
-        q_values = self.q_net(states).gather(1, actions - 1)  # Q值
+
+        q_values = self.q_net(states).gather(1, actions)  # Q值
         # 下个状态的最大Q值
-        q_target = self.target_q_net(next_states)
+        if self.dqn_type == 'DQN':
+            q_target = self.target_q_net(next_states)
+            for i in range(len(q_target)):
+                for j in range(4):
+                    if next_avail_action_mask[i][j] == 0:
+                        q_target[i][j] = -float('inf')
+            # max(1) 返回每一行的最大值
+            max_next_q_values = q_target.max(1)[0].view(-1, 1)
+            # TD误差目标
+        elif self.dqn_type == 'DoubleDQN':
+            q_target = self.q_net(next_states)
+            for i in range(len(q_target)):
+                for j in range(4):
+                    if next_avail_action_mask[i][j] == 0:
+                        q_target[i][j] = -float('inf')
+            # .max(1)[1] 第一列为值 第二列为索引
+            max_action = q_target.max(1)[1].view(-1, 1)
+            max_next_q_values = self.target_q_net(next_states).gather(1, max_action)
 
-        for i in range(len(q_target)):
-            for j in range(4):
-                if next_avail_action_mask[i][j] == 0:
-                    q_target[i][j] = -float('inf')
-
-        # max(1) 返回每一行的最大值
-        max_next_q_values = q_target.max(1)[0].view(-1, 1)
-        q_targets = rewards + self.gamma * max_next_q_values * (1 - dones
-                                                                )  # TD误差目标
+        q_targets = rewards + self.gamma * max_next_q_values * (1 - dones)
         dqn_loss = torch.mean(F.mse_loss(q_values, q_targets))  # 均方误差损失函数
         optimizer.zero_grad()  # PyTorch中默认梯度会累积,这里需要显式将梯度置为0
         dqn_loss.backward()  # 反向传播更新参数

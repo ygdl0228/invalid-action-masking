@@ -27,7 +27,7 @@ class route:
         self.acceleration = acceleration
         self.cur_time = 0
         self.move_direction = {'up': [0, 1], 'down': [0, -1], 'right': [1, 0], 'left': [-1, 0]}
-        self.action_map = {1: 'up', 2: 'down', 3: 'left', 4: 'right'}
+        self.action_map = {0: 'up', 1: 'down', 2: 'left', 3: 'right'}
         self.clf_fig = 'data.json'
         self.nodes = {}
         self.nodes_reverse = {}
@@ -265,8 +265,8 @@ if __name__ == '__main__':
     num_episodes = 50000
     hidden_dim = 128
     gamma = 0.98
-    epsilon = 0.8
-    epsilon_decay = 0.95
+    epsilon = 1e-3
+    epsilon_decay = 0
     min_epsilon = 1e-4
     target_update = 10
     buffer_size = 1000000000
@@ -279,8 +279,9 @@ if __name__ == '__main__':
     replay_buffer = ReplayBuffer(buffer_size)
     state_dim = 6
     action_dim = 4
+    dqn_type = 'DoubleDQN'
     agent = DQN(state_dim, hidden_dim, action_dim, lr, lr_decay, min_lr, gamma, epsilon, epsilon_decay, min_epsilon,
-                target_update, device)
+                target_update, device, dqn_type)
 
     return_list = []
     for eps in range(num_episodes):
