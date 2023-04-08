@@ -130,7 +130,7 @@ class route:
     def reset(self):
         self.creat_map('False')
         self.AGV_get_task()
-        return self.AGV_infor()
+        return self.env_infor()
 
     def distance_angle(self, origin, destination):
 
@@ -173,10 +173,10 @@ class route:
         done = False
         action_dir = self.action_map[action]
         self.move_AGV(action_dir, 0)
-        reward = -1 - self.AGV_infor()[1]
+        reward = -1 - self.env_infor()[1]
         if self.AGV['loc'] == self.AGV['destination']:
             done = True
-        return self.AGV_infor(), reward, done
+        return self.env_infor(), reward, done
 
     def distance(self, cur_v, ad):
         if self.AGV['speed'] + ad * self.acceleration >= self.min_speed and self.AGV[
@@ -234,8 +234,10 @@ class route:
         elif end[1] - start[1] == 0 and end[0] - start[0] < 0:
             return 'left'
 
-    def AGV_infor(self):
-        return self.distance_angle(self.AGV['loc'], self.AGV['destination'])
+    def env_infor(self):
+        state = self.distance_angle(self.AGV['loc'], self.AGV['destination']) + self.AGV['loc'] + self.AGV[
+            'destination']
+        return state
 
     # 判断点到直线的距离 从而判断AGV在哪条路段上
     def distance_to_line_segment(self, P, L):
@@ -260,7 +262,7 @@ if __name__ == '__main__':
     lr = 1e-2
     lr_decay = 0.97
     min_lr = 1e-7
-    num_episodes = 500
+    num_episodes = 50000
     hidden_dim = 128
     gamma = 0.98
     epsilon = 0.8
@@ -275,7 +277,7 @@ if __name__ == '__main__':
     np.random.seed(0)
     torch.manual_seed(0)
     replay_buffer = ReplayBuffer(buffer_size)
-    state_dim = 2
+    state_dim = 6
     action_dim = 4
     agent = DQN(state_dim, hidden_dim, action_dim, lr, lr_decay, min_lr, gamma, epsilon, epsilon_decay, min_epsilon,
                 target_update, device)
@@ -311,7 +313,7 @@ if __name__ == '__main__':
         print(return_list)
         plt.plot(return_list)
         plt.show()
-
+        plt.savefig('return_list')
 
 # while 1:
 #     try:print
