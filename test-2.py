@@ -3,6 +3,8 @@
 # @FileName: test-2.py
 # @Software: PyCharm
 
-a=1
-if a=='2' or a=='1':
-    print('1')
+import numpy as np
+import multiprocessing
+process_num=4
+pipe_dict = dict((i, (pipe1, pipe2)) for i in range(process_num) for pipe1, pipe2 in (multiprocessing.Pipe(),))
+print(pipe_dict[0][1])

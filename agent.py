@@ -12,7 +12,8 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-
+import os
+import torch.nn as nn
 
 class ReplayBuffer:
     ''' 经验回放池 '''
@@ -75,7 +76,7 @@ class DQN:
     ''' DQN算法 '''
 
     def __init__(self, state_dim, hidden_dim, action_dim, learning_rate, lr_decay, min_lr, gamma,
-                 epsilon, epsilon_decay, min_epsilon, target_update, device, dqn_type):
+                 epsilon, epsilon_decay, min_epsilon, target_update, device, dqn_type, output_dir):
         self.action_dim = action_dim
         self.state_dim = state_dim
         self.hidden_dim = hidden_dim
@@ -100,6 +101,20 @@ class DQN:
         self.min_lr = min_lr
         self.learning_rate = learning_rate
         self.lr_decay = lr_decay
+        self.loss=nn.SmoothL1Loss()
+        self.output_dir = output_dir
+        self.output_dir = output_dir
+        self.log_dir = output_dir + 'log/'
+        self.weight_dir = output_dir + 'weight/'
+        self.plot_dir = output_dir + 'plot/'
+        if not os.path.exists(output_dir):
+            os.mkdir(output_dir)
+        if not os.path.exists(self.log_dir):
+            os.mkdir(self.log_dir)
+        if not os.path.exists(self.plot_dir):
+            os.mkdir(self.plot_dir)
+        if not os.path.exists(self.weight_dir):
+            os.mkdir(self.weight_dir)
 
     def take_action(self, state, avail_action, eps):
         # epsilon-贪婪策略采取动作
@@ -128,6 +143,8 @@ class DQN:
         else:
             action = q_values.argmax().item()
         return action
+
+
 
     def update(self, transition_dict, eps):
         optimizer = torch.optim.Adam(self.q_net.parameters(),
@@ -167,7 +184,8 @@ class DQN:
             max_next_q_values = self.target_q_net(next_states).gather(1, max_action)
 
         q_targets = rewards + self.gamma * max_next_q_values * (1 - dones)
-        dqn_loss = torch.mean(F.mse_loss(q_values, q_targets))  # 均方误差损失函数
+        dqn_loss = torch.mean(self.loss(q_values, q_targets))
+        # 均方误差损失函数
         optimizer.zero_grad()  # PyTorch中默认梯度会累积,这里需要显式将梯度置为0
         dqn_loss.backward()  # 反向传播更新参数
         optimizer.step()

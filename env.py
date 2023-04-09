@@ -120,12 +120,15 @@ class route:
         plt.show()
 
     def AGV_get_task(self):
+        #np.random.choice(list(self.nodes.keys())[-self.node_nums_x:])
         self.AGV['start'] = 1
-        self.AGV['end'] = 142
+        #np.random.choice(list(self.nodes.keys())[:self.node_nums_x])
+        self.AGV['end'] = 140
         self.AGV['loc'] = self.nodes[self.AGV['start']]
         self.AGV['destination'] = self.nodes[self.AGV['end']]
         self.AGV['speed'] = 1
         self.AGV['inter'] = [1, 1]
+        print(f'起点：', self.AGV['start'], f'终点：', self.AGV['end'])
 
     def reset(self):
         self.creat_map('False')
@@ -315,6 +318,7 @@ if __name__ == '__main__':
         plt.plot(return_list)
         plt.show()
         plt.savefig('return_list')
+
 
 # while 1:
 #     try:print
