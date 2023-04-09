@@ -120,10 +120,8 @@ class route:
         plt.show()
 
     def AGV_get_task(self):
-        #np.random.choice(list(self.nodes.keys())[-self.node_nums_x:])
-        self.AGV['start'] = 1
-        #np.random.choice(list(self.nodes.keys())[:self.node_nums_x])
-        self.AGV['end'] = 140
+        self.AGV['start'] = np.random.choice(list(self.nodes.keys())[-self.node_nums_x:])
+        self.AGV['end'] = np.random.choice(list(self.nodes.keys())[:self.node_nums_x])
         self.AGV['loc'] = self.nodes[self.AGV['start']]
         self.AGV['destination'] = self.nodes[self.AGV['end']]
         self.AGV['speed'] = 1
@@ -320,9 +318,4 @@ if __name__ == '__main__':
         plt.savefig('return_list')
 
 
-# while 1:
-#     try:print
-#         route.move_AGV(route.action_space()[0],1)
-#     except:
-#         break
-# route.save_info()
+
